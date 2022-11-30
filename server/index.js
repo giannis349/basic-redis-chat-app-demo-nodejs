@@ -252,10 +252,11 @@ async function runApp() {
     const usernameKey = makeUsernameKey(username);
     const userExists = await exists(usernameKey);
     if (!userExists) {
-      const newUser = await createUser(username, password);
-      /** @ts-ignore */
-      req.session.user = newUser;
-      return res.status(201).json(newUser);
+      // const newUser = await createUser(username, password);
+      // /** @ts-ignore */
+      // req.session.user = newUser;
+      // return res.status(201).json(newUser);
+      return res.status(404).json({ message: " User not found" });
     } else {
       const userKey = await get(usernameKey);
       const data = await hgetall(userKey);
@@ -274,6 +275,23 @@ async function runApp() {
     return res.status(404).json({ message: "Invalid username or password" });
   });
 
+  app.post("/adduser", async (req, res) => {
+    console.log('adduser', req.body)
+    const { username, password } = req.body;
+    const usernameKey = makeUsernameKey(username);
+    const userExists = await exists(usernameKey);
+    if (!userExists) {
+      const newUser = await createUser(username, password);
+      /** @ts-ignore */
+      req.session.user = newUser;
+      return res.status(200).json(newUser);
+    } else {
+      return res.status(404).json({ message: " User exist" });
+    }
+    // user not found
+    // return res.status(404).json({ message: "Invalid username or password" });
+  });
+
   app.post("/logout", auth, (req, res) => {
     req.session.destroy(() => {});
     return res.sendStatus(200);
@@ -283,7 +301,7 @@ async function runApp() {
    * Create a private room and add users to it
    */
   app.post("/room", async (req, res) => {
-    console.log('rom', req.body)
+    console.log('rom', req.body.user1)
     const { user1, user2 } = {
       user1: parseInt(req.body.user1),
       user2: parseInt(req.body.user2),
@@ -368,6 +386,7 @@ async function runApp() {
     /** We got the room ids */
     const roomIds = await smembers(`user:${userId}:rooms`);
     const rooms = [];
+    console.log('roomIds',roomIds)
     for (let x = 0; x < roomIds.length; x++) {
       const roomId = roomIds[x];
 
@@ -398,6 +417,7 @@ async function runApp() {
         rooms.push({ id: roomId, names: [name] });
       }
     }
+    console.log('rooms',rooms)
     res.status(200).send(rooms);
   });
 
