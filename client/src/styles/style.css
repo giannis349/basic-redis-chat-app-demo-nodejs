@@ -160,7 +160,7 @@ input::placeholder {
 }
 
 .online-indicator.offline {
-  background-color: #bbb;
+  background-color: rgb(16, 2, 2);
 }
 
 span.pseudo-link {

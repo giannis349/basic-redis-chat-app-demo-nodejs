@@ -3,6 +3,7 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const session = require("express-session");
 const bodyParser = require("body-parser");
+const cors = require("cors");
 /** @ts-ignore */
 const randomName = require("node-random-name");
 let RedisStore = require("connect-redis")(session);
@@ -35,12 +36,28 @@ const { createDemoData } = require("./demo-data");
 const { PORT, SERVER_ID } = require("./config");
 
 const app = express();
-const server = require("http").createServer(app);
+app.use(cors());
+const server = require("http").createServer(app, {
+  cors: {
+    origin: [
+      "http://localhost:8080",
+      "http://localhost:3000",
+      "http://localhost:8081",
+      "capacitor://localhost",
+      "http://localhost/",
+      "http://localhost",
+    ],
+  },
+});
 
 /** @type {SocketIO.Server} */
 const io =
   /** @ts-ignore */
-  require("socket.io")(server);
+  require("socket.io")(server, {
+    cors: {
+      origin: "*"
+    }
+  });
 
 const sessionMiddleware = session({
   store: new RedisStore({ client: redisClient }),
@@ -131,8 +148,13 @@ async function runApp() {
   app.get("/links", (req, res) => {
     return res.send(repoLinks);
   });
-
+  let adduser = null
   io.on("connection", async (socket) => {
+    if (adduser) {
+      socket.request.session.user = adduser
+    }
+    
+    console.log('connection', socket.request.session.user)
     if (socket.request.session.user === undefined) {
       return;
     }
@@ -192,6 +214,7 @@ async function runApp() {
         }
         await zadd(roomKey, "" + message.date, messageString);
         publish("message", message);
+        console.log('message_bottom', message)
         io.to(roomKey).emit("message", message);
       }
     );
@@ -236,10 +259,14 @@ async function runApp() {
     } else {
       const userKey = await get(usernameKey);
       const data = await hgetall(userKey);
+      console.log('login', userKey, data)
       if (await bcrypt.compare(password, data.password)) {
         const user = { id: userKey.split(":").pop(), username };
+        console.log('user', user)
         /** @ts-ignore */
         req.session.user = user;
+        adduser = user
+        console.log('req.session', req.session)
         return res.status(200).json(user);
       }
     }
@@ -255,7 +282,8 @@ async function runApp() {
   /**
    * Create a private room and add users to it
    */
-  app.post("/room", auth, async (req, res) => {
+  app.post("/room", async (req, res) => {
+    console.log('rom', req.body)
     const { user1, user2 } = {
       user1: parseInt(req.body.user1),
       user2: parseInt(req.body.user2),
@@ -265,7 +293,7 @@ async function runApp() {
     if (hasError) {
       return res.sendStatus(400);
     }
-    return res.status(201).send(result);
+    return res.status(200).send(result);
   });
 
   /** Fetch messages from the general chat (just to avoid loading them only once the user was logged in.) */
@@ -281,7 +309,8 @@ async function runApp() {
   });
 
   /** Fetch messages from a selected room */
-  app.get("/room/:id/messages", auth, async (req, res) => {
+  app.get("/room/:id/messages", async (req, res) => {
+    console.log('room_maessages_id', req.params.id, +req.query.offset, +req.query.size)
     const roomId = req.params.id;
     const offset = +req.query.offset;
     const size = +req.query.size;
@@ -334,7 +363,7 @@ async function runApp() {
    * Get rooms for the selected user.
    * TODO: Add middleware and protect the other user info.
    */
-  app.get(`/rooms/:userId`, auth, async (req, res) => {
+  app.get(`/rooms/:userId`, async (req, res) => {
     const userId = req.params.userId;
     /** We got the room ids */
     const roomIds = await smembers(`user:${userId}:rooms`);
