@@ -1,6 +1,7 @@
 // @ts-check
 const bcrypt = require('bcrypt');
-const { incr, set, hmset, sadd, hmget, exists, uset,
+const { json } = require('body-parser');
+const { incr, set, hmset, sadd, hmget, exists, uset, hgetall, rpush, get,
   client: redisClient,
 } = require('./redis');
 
@@ -72,6 +73,51 @@ const createPrivateRoom = async (user1, user2) => {
   }, false];
 };
 
+/**
+ * Create a private room and add users to it
+ * @returns {Promise<[{
+ *  id: string;
+ *  names: any[];
+ *  subchannels: any[];
+ * }, boolean]>}
+ */
+const createPrivateChannel = async (data) => {
+  const roomId = String(data.channelname);
+  const l = data.users.length
+  console.log('l', l, roomId)
+  let allnames = []
+  if (roomId === null) {
+    return [null, true];
+  }
+
+  for (let index = 0; index < data.users.length; index++) {
+    const element = data.users[index];
+    console.log('element', element)
+    let i = element
+    const id = String(i);
+    const userExists = await exists(`users:${id}`);
+    if (userExists) {
+      let j = JSON.stringify(data)
+      await sadd(`users:${id}:rooms`, `${j}`);
+      let aname = await hgetall(`users:${id}`);
+      console.log('addname', aname)
+      allnames.push({username: aname.username, userid: id})
+      
+    } else {
+      console.log('User not exist')
+    }
+  }
+
+  /** Add rooms to those users */
+  // await sadd(`user:${user1}:rooms`, `${roomId}`);
+  // await sadd(`user:${user2}:rooms`, `${roomId}`);
+
+  return [{
+    id: roomId,
+    names: allnames,
+    subchannels: []
+  }, false];
+};
 
 const getMessages = async (roomId = "0", offset = 0, size = 50) => {
   /**
@@ -111,5 +157,6 @@ module.exports = {
   createUser,
   makeUsernameKey,
   createPrivateRoom,
+  createPrivateChannel,
   getPrivateRoomId
 };

@@ -30,11 +30,14 @@ const {
   createUser,
   makeUsernameKey,
   createPrivateRoom,
+  createPrivateChannel,
   sanitise,
   getMessages,
+  getChannels,
 } = require("./utils");
 const { createDemoData } = require("./demo-data");
 const { PORT, SERVER_ID } = require("./config");
+const { json } = require("body-parser");
 
 const app = express();
 app.use(cors());
@@ -211,10 +214,11 @@ async function runApp() {
             ],
           };
           publish("show.room", msg);
-          socket.broadcast.emit(`show.room`, msg);
+          socket.broadcast.emit(`show.room`, message);
         }
         await zadd(roomKey, "" + message.date, messageString);
-        publish("message", message);
+        // publish("messages", message);
+        await rpush("messages", messageString);
         console.log('message_bottom', message)
         io.to(roomKey).emit("message", message);
       }
@@ -367,52 +371,21 @@ async function runApp() {
    */
   app.get(`/rooms/:userId`, async (req, res) => {
     const userId = req.params.userId;
-    /** We got the room ids */
-    const roomIds = await smembers(`user:${userId}:rooms`);
-    const rooms = [];
-    console.log('roomIds',roomIds)
-    for (let x = 0; x < roomIds.length; x++) {
-      const roomId = roomIds[x];
-
-      let name = await get(`room:${roomId}:name`);
-      /** It's a room without a name, likey the one with private messages */
-      if (!name) {
-        /**
-         * Make sure we don't add private rooms with empty messages
-         * It's okay to add custom (named rooms)
-         */
-        const roomExists = await exists(`room:${roomId}`);
-        if (!roomExists) {
-          continue;
-        }
-
-        const userIds = roomId.split(":");
-        if (userIds.length !== 2) {
-          return res.sendStatus(400);
-        }
-        rooms.push({
-          id: roomId,
-          names: [
-            await hmget(`user:${userIds[0]}`, "username"),
-            await hmget(`user:${userIds[1]}`, "username"),
-          ],
-        });
-      } else {
-        rooms.push({ id: roomId, names: [name] });
-      }
-    }
-    console.log('rooms',rooms)
-    res.status(200).send(rooms);
+    let id = String(userId)
+    const myrooms = await smembers(`users:${id}:rooms`);
+    console.log('userId',userId, myrooms)
+    console.log('rooms',myrooms)
+    res.status(200).send(myrooms);
   });
 
-  app.post("/newmessage", async (req, res) => {
-    console.log('newmessage', req.body)
-    let msg = JSON.stringify(req.body);
-    await rpush("messages", msg);
-    return res.status(200).send('done');
+  app.get(`/myrooms/:userId`, async (req, res) => {
+    const userId = req.params.userId;
+    let id = String(userId)
+    const myrooms = await smembers(`users:${id}:rooms`);
+    
+    res.status(200).send(myrooms);
   });
 
-  
   app.post("/adduser", async (req, res) => {
     console.log('adduser', req.body)
     
@@ -429,27 +402,43 @@ async function runApp() {
     }
   });
 
-  app.get(`/users`, async (req, res) => {
-    /** @ts-ignore */
-    /** @type {string[]} */ const ids = req.query.ids;
-    if (typeof ids === "object" && Array.isArray(ids)) {
-      /** Need to fetch */
-      const users = {};
-      for (let x = 0; x < ids.length; x++) {
-        /** @type {string} */
-        const id = ids[x];
-        const user = await hgetall(`user:${id}`);
+  app.get(`/getusers`, async (req, res) => {
+    
+    const totalusers = await get("total_users");
+    console.log('totalusers', totalusers)
+    const users = {};
+    for (let i = 0; i <= totalusers; i++) {
+      const id = String(i);
+      const userExists = await exists(`users:${id}`);
+      if (userExists) {
+        const user = await hgetall(`users:${id}`);
         users[id] = {
           id: id,
           username: user.username,
+          role: user.role,
           online: !!(await sismember("online_users", id)),
         };
+      } else {
+        console.log('User not exist')
       }
-      return res.send(users);
+        
     }
-    return res.sendStatus(404);
+    return res.send(users);
   });
-  
+
+  app.post("/create_channel", async (req, res) => {
+    console.log('rom', req.body)
+    const data = req.body
+    const [result, hasError] = await createPrivateChannel(data);
+    if (hasError) {
+      return res.sendStatus(400);
+    }
+    console.log('result', result)
+    let str = JSON.stringify(result)
+    await rpush("rooms", str);
+    return res.status(200).send(result);
+
+  });
   /**
    * We have an external port from the environment variable. To get this working on heroku,
    * it's required to specify the host

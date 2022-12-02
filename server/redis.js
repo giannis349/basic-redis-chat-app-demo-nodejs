@@ -51,7 +51,7 @@ module.exports = {
     new Promise((a, b) => client.hexists(key, key2, resolvePromise(a, b))),
   set: (key = "key", value) =>
     new Promise((a, b) => client.set(key, value, resolvePromise(a, b))),
-  uset: (key = "key", key2 = "key2", key3 = "key3",) =>
+  uset: (key = "key", values = []) =>
     new Promise((a, b) => client.set(key, values, resolvePromise(a, b))),
   get: (key = "key") =>
     new Promise((a, b) => client.get(key, resolvePromise(a, b))),
@@ -75,4 +75,8 @@ module.exports = {
     new Promise((a, b) => client.srem(key, key2, resolvePromise(a, b))),
   rpush: (key = "key", value) =>
   new Promise((a, b) => client.rpush(key, value,resolvePromise(a, b))),
+  lrange: (key = "key", min = 0, max = 100) =>
+    new Promise((a, b) =>
+      client.lrange(key, min, max, resolvePromise(a, b))
+    ),
 };
