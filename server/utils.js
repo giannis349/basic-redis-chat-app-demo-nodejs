@@ -1,6 +1,6 @@
 // @ts-check
 const bcrypt = require('bcrypt');
-const { incr, set, hmset, sadd, hmget, exists,
+const { incr, set, hmset, sadd, hmget, exists, uset,
   client: redisClient,
 } = require('./redis');
 
@@ -14,24 +14,26 @@ const makeUsernameKey = (username) => {
  * Creates a user and adds default chat rooms
  * @param {string} username 
  * @param {string} password 
+ * @param {Number} role 
  */
-const createUser = async (username, password) => {
+const createUser = async (username, password, role) => {
   const usernameKey = makeUsernameKey(username);
   /** Create user */
   const hashedPassword = await bcrypt.hash(password, 10);
   const nextId = await incr("total_users");
-  const userKey = `user:${nextId}`;
-  await set(usernameKey, userKey);
-  await hmset(userKey, ["username", username, "password", hashedPassword]);
+  const userKey = `users:${nextId}`;
+  const roleKey = `role:${role}`
+  await uset(usernameKey, userKey, roleKey);
+  await hmset(userKey, ["username", username, "password", hashedPassword, "role", roleKey]);
 
   /**
    * Each user has a set of rooms he is in
    * let's define the default ones
    */
-  await sadd(`user:${nextId}:rooms`, `${0}`); // Main room
+  await sadd(`users:${nextId}:rooms`, `${0}`); // Main room
 
   /** This one should go to the session */
-  return { id: nextId, username };
+  return { id: nextId, username, role };
 };
 
 const getPrivateRoomId = (user1, user2) => {

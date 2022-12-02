@@ -17,6 +17,7 @@ const {
   get,
   hgetall,
   sadd,
+  rpush,
   zadd,
   hmget,
   smembers,
@@ -275,23 +276,6 @@ async function runApp() {
     return res.status(404).json({ message: "Invalid username or password" });
   });
 
-  app.post("/adduser", async (req, res) => {
-    console.log('adduser', req.body)
-    const { username, password } = req.body;
-    const usernameKey = makeUsernameKey(username);
-    const userExists = await exists(usernameKey);
-    if (!userExists) {
-      const newUser = await createUser(username, password);
-      /** @ts-ignore */
-      req.session.user = newUser;
-      return res.status(200).json(newUser);
-    } else {
-      return res.status(404).json({ message: " User exist" });
-    }
-    // user not found
-    // return res.status(404).json({ message: "Invalid username or password" });
-  });
-
   app.post("/logout", auth, (req, res) => {
     req.session.destroy(() => {});
     return res.sendStatus(200);
@@ -421,6 +405,51 @@ async function runApp() {
     res.status(200).send(rooms);
   });
 
+  app.post("/newmessage", async (req, res) => {
+    console.log('newmessage', req.body)
+    let msg = JSON.stringify(req.body);
+    await rpush("messages", msg);
+    return res.status(200).send('done');
+  });
+
+  
+  app.post("/adduser", async (req, res) => {
+    console.log('adduser', req.body)
+    
+    const { username, password, role } = req.body;
+    const usernameKey = makeUsernameKey(username);
+    const userExists = await exists(usernameKey);
+    if (!userExists) {
+      const newUser = await createUser(username, password, role);
+      /** @ts-ignore */
+      req.session.user = newUser;
+      return res.status(200).json(newUser);
+    } else {
+      return res.status(404).json({ message: " User exist" });
+    }
+  });
+
+  app.get(`/users`, async (req, res) => {
+    /** @ts-ignore */
+    /** @type {string[]} */ const ids = req.query.ids;
+    if (typeof ids === "object" && Array.isArray(ids)) {
+      /** Need to fetch */
+      const users = {};
+      for (let x = 0; x < ids.length; x++) {
+        /** @type {string} */
+        const id = ids[x];
+        const user = await hgetall(`user:${id}`);
+        users[id] = {
+          id: id,
+          username: user.username,
+          online: !!(await sismember("online_users", id)),
+        };
+      }
+      return res.send(users);
+    }
+    return res.sendStatus(404);
+  });
+  
   /**
    * We have an external port from the environment variable. To get this working on heroku,
    * it's required to specify the host

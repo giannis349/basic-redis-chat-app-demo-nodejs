@@ -51,6 +51,8 @@ module.exports = {
     new Promise((a, b) => client.hexists(key, key2, resolvePromise(a, b))),
   set: (key = "key", value) =>
     new Promise((a, b) => client.set(key, value, resolvePromise(a, b))),
+  uset: (key = "key", key2 = "key2", key3 = "key3",) =>
+    new Promise((a, b) => client.set(key, values, resolvePromise(a, b))),
   get: (key = "key") =>
     new Promise((a, b) => client.get(key, resolvePromise(a, b))),
   hgetall: (key = "key") =>
@@ -71,4 +73,6 @@ module.exports = {
     new Promise((a, b) => client.smembers(key, resolvePromise(a, b))),
   srem: (key = "key", key2 = "") =>
     new Promise((a, b) => client.srem(key, key2, resolvePromise(a, b))),
+  rpush: (key = "key", value) =>
+  new Promise((a, b) => client.rpush(key, value,resolvePromise(a, b))),
 };
