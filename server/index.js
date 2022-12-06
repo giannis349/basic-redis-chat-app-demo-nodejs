@@ -15,7 +15,9 @@ const {
   exists,
   set,
   get,
+  getset,
   hgetall,
+  scan,
   sadd,
   rpush,
   zadd,
@@ -120,7 +122,7 @@ const initPubSub = () => {
      * is handled to resolve the name.
      * Rooms with private messages don't have a name
      */
-    await set(`room:${0}:name`, "General");
+    await set(`room:${0}:name`, "Announcements");
 
     /** Create demo data with the default users */
     await createDemoData();
@@ -174,6 +176,7 @@ async function runApp() {
     socket.broadcast.emit("user.connected", msg);
 
     socket.on("room.join", (id) => {
+      console.log('room.join', id)
       socket.join(`room:${id}`);
     });
 
@@ -182,6 +185,7 @@ async function runApp() {
       /**
        * @param {{
        *  from: string
+       *  userid: string
        *  date: number
        *  message: string
        *  roomId: string
@@ -263,9 +267,7 @@ async function runApp() {
       // return res.status(201).json(newUser);
       return res.status(404).json({ message: " User not found" });
     } else {
-      const userKey = await get(usernameKey);
-      const data = await hgetall(userKey);
-      console.log('login', userKey, data)
+      const data = await hgetall(`users:${userid}`);
       if (await bcrypt.compare(password, data.password)) {
         const user = { id: userKey.split(":").pop(), username };
         console.log('user', user)
@@ -276,7 +278,6 @@ async function runApp() {
         return res.status(200).json(user);
       }
     }
-    // user not found
     return res.status(404).json({ message: "Invalid username or password" });
   });
 
@@ -373,8 +374,6 @@ async function runApp() {
     const userId = req.params.userId;
     let id = String(userId)
     const myrooms = await smembers(`users:${id}:rooms`);
-    console.log('userId',userId, myrooms)
-    console.log('rooms',myrooms)
     res.status(200).send(myrooms);
   });
 
@@ -382,18 +381,16 @@ async function runApp() {
     const userId = req.params.userId;
     let id = String(userId)
     const myrooms = await smembers(`users:${id}:rooms`);
-    
     res.status(200).send(myrooms);
   });
 
   app.post("/adduser", async (req, res) => {
     console.log('adduser', req.body)
-    
-    const { username, password, role } = req.body;
-    const usernameKey = makeUsernameKey(username);
+    const { username, userid, password, role } = req.body;
+    const usernameKey = makeUsernameKey(userid);
     const userExists = await exists(usernameKey);
     if (!userExists) {
-      const newUser = await createUser(username, password, role);
+      const newUser = await createUser(username, userid, password, role);
       /** @ts-ignore */
       req.session.user = newUser;
       return res.status(200).json(newUser);
@@ -403,19 +400,18 @@ async function runApp() {
   });
 
   app.get(`/getusers`, async (req, res) => {
-    
-    const totalusers = await get("total_users");
-    console.log('totalusers', totalusers)
-    const users = {};
-    for (let i = 0; i <= totalusers; i++) {
-      const id = String(i);
+    const allusers = await smembers("allusers");
+    const users = [];
+    for (let i = 0; i <= allusers.length; i++) {
+      const id = String(allusers[i]);
       const userExists = await exists(`users:${id}`);
       if (userExists) {
         const user = await hgetall(`users:${id}`);
-        users[id] = {
+        users[i] = {
           id: id,
           username: user.username,
           role: user.role,
+          userid: user.userid,
           online: !!(await sismember("online_users", id)),
         };
       } else {
@@ -436,6 +432,18 @@ async function runApp() {
     console.log('result', result)
     let str = JSON.stringify(result)
     await rpush("rooms", str);
+    return res.status(200).send(result);
+
+  });
+
+  app.post("/lastmessage", async (req, res) => {
+    console.log('lastmessage', req.body)
+    let result = []
+    const roomid = req.body.roomid
+    const userid = req.body.userid
+    let ls = await get(`users:${roomid}:${userid}:lastmessage`);
+    console.log('ls', ls)
+    result.push(ls)
     return res.status(200).send(result);
 
   });

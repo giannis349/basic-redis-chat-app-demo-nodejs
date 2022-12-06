@@ -11,30 +11,39 @@ const makeUsernameKey = (username) => {
   return usernameKey;
 };
 
+const makeUseridKey = (userid) => {
+  const useridKey = `userid:${userid}`;
+  return useridKey;
+};
+
 /**
  * Creates a user and adds default chat rooms
  * @param {string} username 
  * @param {string} password 
  * @param {Number} role 
+ * @param {string} userid
  */
-const createUser = async (username, password, role) => {
+const createUser = async (username, userid, password, role) => {
   const usernameKey = makeUsernameKey(username);
+  const useridKey = makeUseridKey(userid);
   /** Create user */
   const hashedPassword = await bcrypt.hash(password, 10);
   const nextId = await incr("total_users");
-  const userKey = `users:${nextId}`;
+  const userKey = `users:${userid}`;
   const roleKey = `role:${role}`
-  await uset(usernameKey, userKey, roleKey);
-  await hmset(userKey, ["username", username, "password", hashedPassword, "role", roleKey]);
+  // const useridKey = `userid:${userid}`
+  await uset(usernameKey, userKey, roleKey, useridKey);
+  await hmset(userKey, ["username", username, "password", hashedPassword, "role", roleKey, "userid", useridKey]);
+  await sadd("allusers", userid);
 
   /**
    * Each user has a set of rooms he is in
    * let's define the default ones
    */
-  await sadd(`users:${nextId}:rooms`, `${0}`); // Main room
+  await sadd(`users:${userid}:rooms`, `${0}`); // Main room
 
   /** This one should go to the session */
-  return { id: nextId, username, role };
+  return { id: userid, username, role, userid };
 };
 
 const getPrivateRoomId = (user1, user2) => {
@@ -82,6 +91,8 @@ const createPrivateRoom = async (user1, user2) => {
  * }, boolean]>}
  */
 const createPrivateChannel = async (data) => {
+  console.log('data', data)
+  const userid = data.userid
   const roomId = String(data.channelname);
   const l = data.users.length
   console.log('l', l, roomId)
@@ -102,6 +113,7 @@ const createPrivateChannel = async (data) => {
       let aname = await hgetall(`users:${id}`);
       console.log('addname', aname)
       allnames.push({username: aname.username, userid: id})
+      console.log('allnames', allnames)
       
     } else {
       console.log('User not exist')
@@ -156,6 +168,7 @@ module.exports = {
   sanitise,
   createUser,
   makeUsernameKey,
+  makeUseridKey,
   createPrivateRoom,
   createPrivateChannel,
   getPrivateRoomId

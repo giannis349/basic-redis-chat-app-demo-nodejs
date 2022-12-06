@@ -41,6 +41,7 @@ module.exports = {
   },
   incr: (key = "key") =>
     new Promise((a, b) => client.incr(key, resolvePromise(a, b))),
+  scan: (key = "key") => client.scan(key),
   decr: (key = "key") =>
     new Promise((a, b) => client.decr(key, resolvePromise(a, b))),
   hmset: (key = "key", values = []) =>
@@ -55,6 +56,8 @@ module.exports = {
     new Promise((a, b) => client.set(key, values, resolvePromise(a, b))),
   get: (key = "key") =>
     new Promise((a, b) => client.get(key, resolvePromise(a, b))),
+  getset: (key = "key") =>
+    new Promise((a, b) => client.getset(key, resolvePromise(a, b))),
   hgetall: (key = "key") =>
     new Promise((a, b) => client.hgetall(key, resolvePromise(a, b))),
   zrangebyscore: (key = "key", min = 0, max = 1) =>
