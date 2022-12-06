@@ -192,6 +192,7 @@ async function runApp() {
        * }} message
        **/
       async (message) => {
+        console.log('message', message)
         /** Make sure nothing illegal is sent here. */
         message = { ...message, message: sanitise(message.message) };
         /**
@@ -221,12 +222,14 @@ async function runApp() {
           socket.broadcast.emit(`show.room`, message);
         }
         await zadd(roomKey, "" + message.date, messageString);
-        // publish("messages", message);
+        // publish("messages", messageString);
         await rpush("messages", messageString);
+        await set(`users:${message.roomId}:${message.userid}:lastmessage`, message.date),
         console.log('message_bottom', message)
         io.to(roomKey).emit("message", message);
       }
     );
+
     socket.on("disconnect", async () => {
       const userId = socket.request.session.user.id;
       await srem("online_users", userId);
@@ -257,20 +260,14 @@ async function runApp() {
 
   /** Login/register login */
   app.post("/login", async (req, res) => {
-    const { username, password } = req.body;
-    const usernameKey = makeUsernameKey(username);
-    const userExists = await exists(usernameKey);
+    const { username, password, userid } = req.body;
+    const userExists = await exists(`users:${userid}`);
     if (!userExists) {
-      // const newUser = await createUser(username, password);
-      // /** @ts-ignore */
-      // req.session.user = newUser;
-      // return res.status(201).json(newUser);
       return res.status(404).json({ message: " User not found" });
     } else {
       const data = await hgetall(`users:${userid}`);
       if (await bcrypt.compare(password, data.password)) {
-        const user = { id: userKey.split(":").pop(), username };
-        console.log('user', user)
+        const user = { id: data.userid.split(":").pop(), username, role: data.role.split(":").pop()};
         /** @ts-ignore */
         req.session.user = user;
         adduser = user
