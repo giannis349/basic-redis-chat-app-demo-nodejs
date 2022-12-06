@@ -186,7 +186,7 @@ async function runApp() {
        * @param {{
        *  from: string
        *  userid: string
-       *  date: number
+       *  date: string
        *  message: string
        *  roomId: string
        * }} message
@@ -207,24 +207,25 @@ async function runApp() {
          * It may be possible that the room is private and new, so it won't be shown on the other
          * user's screen, check if the roomKey exist. If not then broadcast message that the room is appeared
          */
-        const isPrivate = !(await exists(`${roomKey}:name`));
-        const roomHasMessages = await exists(roomKey);
-        if (isPrivate && !roomHasMessages) {
-          const ids = message.roomId.split(":");
-          const msg = {
-            id: message.roomId,
-            names: [
-              await hmget(`user:${ids[0]}`, "username"),
-              await hmget(`user:${ids[1]}`, "username"),
-            ],
-          };
-          publish("show.room", msg);
-          socket.broadcast.emit(`show.room`, message);
-        }
+        // const isPrivate = !(await exists(`${roomKey}:name`));
+        // const roomHasMessages = await exists(roomKey);
+        // if (isPrivate && !roomHasMessages) {
+        //   const ids = message.roomId.split(":");
+        //   const msg = {
+        //     id: message.roomId,
+        //     names: [
+        //       await hmget(`user:${ids[0]}`, "username"),
+        //       await hmget(`user:${ids[1]}`, "username"),
+        //     ],
+        //   };
+        //   publish("show.room", msg);
+        //   socket.broadcast.emit(`show.room`, message);
+        // }
         await zadd(roomKey, "" + message.date, messageString);
         // publish("messages", messageString);
         await rpush("messages", messageString);
-        await set(`users:${message.roomId}:${message.userid}:lastmessage`, message.date),
+        let d = String(message.date)
+        await set(`users:${message.roomId}:${message.userid}:lastmessage`, d),
         console.log('message_bottom', message)
         io.to(roomKey).emit("message", message);
       }
@@ -267,6 +268,7 @@ async function runApp() {
     } else {
       const data = await hgetall(`users:${userid}`);
       if (await bcrypt.compare(password, data.password)) {
+        console.log('data', data)
         const user = { id: data.userid.split(":").pop(), username, role: data.role.split(":").pop()};
         /** @ts-ignore */
         req.session.user = user;
@@ -434,13 +436,23 @@ async function runApp() {
   });
 
   app.post("/lastmessage", async (req, res) => {
-    console.log('lastmessage', req.body)
+    console.log('lastmessage', req.body.roomids)
     let result = []
-    const roomid = req.body.roomid
-    const userid = req.body.userid
-    let ls = await get(`users:${roomid}:${userid}:lastmessage`);
-    console.log('ls', ls)
-    result.push(ls)
+    const {roomids, userid} = req.body
+    console.log('roomids.length', roomids.length)
+    for (let index6 = 0; index6 < roomids.length; index6++) {
+      const element = roomids[index6];
+      let ls = await get(`users:${element.id}:${userid}:lastmessage`);
+      let obj = {
+        roomid: element.id,
+        ls: ls
+      }
+      console.log('ls', ls)
+      result.push(obj)
+    }
+    // let ls = await get(`users:${roomid}:${userid}:lastmessage`);
+    // console.log('ls', ls)
+    // result.push(ls)
     return res.status(200).send(result);
 
   });
