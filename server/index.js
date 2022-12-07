@@ -1,4 +1,5 @@
 // @ts-check
+
 const express = require("express");
 const bcrypt = require("bcrypt");
 const session = require("express-session");
@@ -9,6 +10,15 @@ const randomName = require("node-random-name");
 let RedisStore = require("connect-redis")(session);
 const path = require("path");
 const fs = require("fs").promises;
+const fs1 = require("fs");
+const fileUpload = require('express-fileupload');
+const crypto = require("crypto");
+const stream = require("stream");
+const CryptoAlgorithm = "aes-256-cbc";
+const secret = {
+  iv: Buffer.from("efb2da92cff888c9c295dc4ee682789c", "hex"),
+  key: Buffer.from("6245cb9b8dab1c1630bb3283063f963574d612ca6ec60bc8a5d1e07ddd3f7c53", "hex"),
+};
 
 const {
   client: redisClient,
@@ -35,13 +45,17 @@ const {
   createPrivateChannel,
   sanitise,
   getMessages,
-  getChannels,
 } = require("./utils");
 const { createDemoData } = require("./demo-data");
 const { PORT, SERVER_ID } = require("./config");
 const { json } = require("body-parser");
 
 const app = express();
+const filepath = path.join(__dirname + "/data/")
+console.log('filepath', filepath)
+app.use(fileUpload({
+  createParentPath: true
+}));
 app.use(cors());
 const server = require("http").createServer(app, {
   cors: {
@@ -450,11 +464,73 @@ async function runApp() {
       console.log('ls', ls)
       result.push(obj)
     }
-    // let ls = await get(`users:${roomid}:${userid}:lastmessage`);
-    // console.log('ls', ls)
-    // result.push(ls)
     return res.status(200).send(result);
+  });
+  app.post('/upload', function (req, res) {
+    console.log('upload', req.files.file.name)
+    res.send('File uploaded ' + req.files.file.name)
+    saveEncryptedFile(req.files.file.data, filepath + req.files.file.name, secret.key, secret.iv);
+  })
+  
+  function saveEncryptedFile(buffer, filePath, key, iv) {
+    console.log("save", buffer, filePath, key, iv)
+    const encrypted = encrypt(CryptoAlgorithm, buffer, key, iv);
+  
+      filePath = getEncryptedFilePath(filePath);
+      console.log("efilePath", filePath);
+      fs1.writeFileSync(filePath, encrypted);
+      console.log("file finished writting");
+  }
+  
+  function encrypt(algorithm, buffer, key, iv) {
+    const cipher = crypto.createCipheriv(algorithm, key, iv);
+    const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
+    return encrypted;
+  }
+  
+  function decrypt(algorithm, buffer, key, iv) {
+    const decipher = crypto.createDecipheriv(algorithm, key, iv);
+    const decrypted = Buffer.concat([decipher.update(buffer), decipher.final()]);
+    return decrypted;
+  }
+  
+  function getEncryptedFilePath(filePath) {
 
+    console.log('filePath_getEncryptedFilePath', path.basename(filePath, path.extname(filePath)) +
+    "_encrypted" +
+    path.extname(filePath))
+    return path.join(
+      path.dirname(filePath),
+      path.basename(filePath, path.extname(filePath)) +
+        "_encrypted" +
+        path.extname(filePath)
+    );
+    
+  }
+  
+  function getEncryptedFile(filePath, key, iv) {
+    filePath = getEncryptedFilePath(filePath);
+    const encrypted = fs1.readFileSync(filePath);
+    const buffer = decrypt(CryptoAlgorithm, encrypted, key, iv);
+    return buffer;
+  }
+  
+  app.get("/data/:fileName", (req, res) => {
+    let nename = req.params.fileName
+    console.log('newname', nename)
+    const buffer = getEncryptedFile(
+      path.join(filepath, nename),
+      secret.key,
+      secret.iv
+    );
+    const readStream = new stream.PassThrough();
+    readStream.end(buffer);
+    res.writeHead(200, {
+      "Content-disposition": "attachment; filename=" + req.params.fileName,
+      "Content-Type": "application/octet-stream",
+      "Content-Length": buffer.length,
+    });
+    res.end(buffer);
   });
   /**
    * We have an external port from the environment variable. To get this working on heroku,
