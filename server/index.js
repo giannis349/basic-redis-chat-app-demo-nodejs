@@ -203,6 +203,7 @@ async function runApp() {
        *  date: string
        *  message: string
        *  roomId: string
+       *  attachment: any[];
        * }} message
        **/
       async (message) => {
@@ -321,7 +322,7 @@ async function runApp() {
     const roomId = "0";
     try {
       let name = await get(`room:${roomId}:name`);
-      const messages = await getMessages(roomId, 0, 20);
+      const messages = await getMessages(roomId, 0, 15);
       return res.status(200).send({ id: roomId, name, messages });
     } catch (err) {
       return res.status(400).send(err);
@@ -329,13 +330,18 @@ async function runApp() {
   });
 
   /** Fetch messages from a selected room */
-  app.get("/room/:id/messages", async (req, res) => {
-    console.log('room_maessages_id', req.params.id, +req.query.offset, +req.query.size)
-    const roomId = req.params.id;
-    const offset = +req.query.offset;
-    const size = +req.query.size;
+  app.post("/room/:id/messages", async (req, res) => {
+    console.log('room_maessages_id', req.body)
+    const roomId = req.body.id;
+    const offset = req.body.offset;
+    const size = req.body.size;
+    const usertoreset = req.body.usertoreset
     try {
-      const messages = await getMessages(roomId, offset, size);
+      const messages = await getMessages(roomId, offset, size, usertoreset);
+      let lastmessagefound = messages[0]
+      if (usertoreset !== 0) {
+        await set(`users:${lastmessagefound.roomId}:${usertoreset}:lastmessage`, String(lastmessagefound.date))
+      }
       return res.status(200).send(messages);
     } catch (err) {
       return res.status(400).send(err);
@@ -453,7 +459,7 @@ async function runApp() {
     console.log('lastmessage', req.body.roomids)
     let result = []
     const {roomids, userid} = req.body
-    console.log('roomids.length', roomids.length)
+    console.log('roomids.length', roomids)
     for (let index6 = 0; index6 < roomids.length; index6++) {
       const element = roomids[index6];
       let ls = await get(`users:${element.id}:${userid}:lastmessage`);
@@ -466,10 +472,18 @@ async function runApp() {
     }
     return res.status(200).send(result);
   });
-  app.post('/upload', function (req, res) {
-    console.log('upload', req.files.file.name)
-    res.send('File uploaded ' + req.files.file.name)
-    saveEncryptedFile(req.files.file.data, filepath + req.files.file.name, secret.key, secret.iv);
+  app.post('/upload', async function (req, res) {
+    let fileid = Date.now()
+    let obj = {
+      name: req.files.file.name,
+      fileid: fileid,
+      type: req.body.type
+    }
+    console.log('upload', req.files.file.data)
+    res.send(obj)
+    saveEncryptedFile(req.files.file.data, filepath + fileid + req.files.file.name, secret.key, secret.iv);
+    let i = JSON.stringify(obj)
+    await sadd(`attachment:${fileid}:file`, i)
   })
   
   function saveEncryptedFile(buffer, filePath, key, iv) {
@@ -515,23 +529,46 @@ async function runApp() {
     return buffer;
   }
   
-  app.get("/data/:fileName", (req, res) => {
-    let nename = req.params.fileName
-    console.log('newname', nename)
+  // app.get("/data/:fileName", (req, res) => {
+  //   let nename = req.params.fileName
+  //   console.log('newname', nename)
+  //   const buffer = getEncryptedFile(
+  //     path.join(filepath, nename),
+  //     secret.key,
+  //     secret.iv
+  //   );
+  //   const readStream = new stream.PassThrough();
+  //   readStream.end(buffer);
+  //   res.writeHead(200, {
+  //     "Content-disposition": "attachment; filename=" + req.params.fileName,
+  //     "Content-Type": "application/octet-stream",
+  //     "Content-Length": buffer.length,
+  //   });
+  //   res.end(buffer);
+  // });
+
+  app.get("/data/:fileid", async (req, res) => {
+    let id = req.params.fileid.split('.').shift()
+    console.log('newname', id)
+    let a = await smembers(`attachment:${id}:file`)
+    console.log('attachmentaaa', a)
+    let attachment = JSON.parse(a)
+    console.log('attachment', attachment.name)
     const buffer = getEncryptedFile(
-      path.join(filepath, nename),
+      path.join(filepath, attachment.fileid + attachment.name),
       secret.key,
       secret.iv
     );
     const readStream = new stream.PassThrough();
     readStream.end(buffer);
     res.writeHead(200, {
-      "Content-disposition": "attachment; filename=" + req.params.fileName,
-      "Content-Type": "application/octet-stream",
+      "Content-disposition": "attachment; fileid=" + req.params.fileid,
+      "Content-Type": attachment.type,
       "Content-Length": buffer.length,
     });
     res.end(buffer);
   });
+
   /**
    * We have an external port from the environment variable. To get this working on heroku,
    * it's required to specify the host

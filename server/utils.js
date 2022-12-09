@@ -131,7 +131,7 @@ const createPrivateChannel = async (data) => {
   }, false];
 };
 
-const getMessages = async (roomId = "0", offset = 0, size = 50) => {
+const getMessages = async (roomId = "0", offset = 0, size = 50, usertoreset = "") => {
   /**
    * Logic:
    * 1. Check if room with id exists
