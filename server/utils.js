@@ -153,6 +153,29 @@ const getMessages = async (roomId = "0", offset = 0, size = 50, usertoreset = ""
   }
 };
 
+const getMoreMessages = async (roomId, offset, size) => {
+  console.log('getMoreMessages', roomId, offset, size)
+  /**
+   * Logic:
+   * 1. Check if room with id exists
+   * 2. Fetch messages from last hour
+   **/
+  const roomKey = `room:${roomId}`;
+  const roomExists = await exists(roomKey);
+  if (!roomExists) {
+    return [];
+  } else {
+    return new Promise((resolve, reject) => {
+      redisClient.zrevrange(roomKey, offset, offset + size, (err, values) => {
+        if (err) {
+          reject(err);
+        }
+        resolve(values.map((val) => JSON.parse(val)));
+      });
+    });
+  }
+};
+
 const sanitise = (text) => {
   let sanitisedText = text;
 
@@ -165,6 +188,7 @@ const sanitise = (text) => {
 
 module.exports = {
   getMessages,
+  getMoreMessages,
   sanitise,
   createUser,
   makeUsernameKey,

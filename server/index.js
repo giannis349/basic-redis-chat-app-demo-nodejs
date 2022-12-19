@@ -45,6 +45,7 @@ const {
   createPrivateChannel,
   sanitise,
   getMessages,
+  getMoreMessages,
 } = require("./utils");
 const { createDemoData } = require("./demo-data");
 const { PORT, SERVER_ID } = require("./config");
@@ -52,7 +53,6 @@ const { json } = require("body-parser");
 
 const app = express();
 const filepath = path.join(__dirname + "/data/")
-console.log('filepath', filepath)
 app.use(fileUpload({
   createParentPath: true
 }));
@@ -173,8 +173,6 @@ async function runApp() {
     if (adduser) {
       socket.request.session.user = adduser
     }
-    
-    console.log('connection', socket.request.session.user)
     if (socket.request.session.user === undefined) {
       return;
     }
@@ -190,7 +188,6 @@ async function runApp() {
     socket.broadcast.emit("user.connected", msg);
 
     socket.on("room.join", (id) => {
-      console.log('room.join', id)
       socket.join(`room:${id}`);
     });
 
@@ -207,7 +204,6 @@ async function runApp() {
        * }} message
        **/
       async (message) => {
-        console.log('message', message)
         /** Make sure nothing illegal is sent here. */
         message = { ...message, message: sanitise(message.message) };
         /**
@@ -241,7 +237,6 @@ async function runApp() {
         await rpush("messages", messageString);
         let d = String(message.date)
         await set(`users:${message.roomId}:${message.userid}:lastmessage`, d),
-        console.log('message_bottom', message)
         io.to(roomKey).emit("message", message);
       }
     );
@@ -283,12 +278,10 @@ async function runApp() {
     } else {
       const data = await hgetall(`users:${userid}`);
       if (await bcrypt.compare(password, data.password)) {
-        console.log('data', data)
         const user = { id: data.userid.split(":").pop(), username, role: data.role.split(":").pop()};
         /** @ts-ignore */
         req.session.user = user;
         adduser = user
-        console.log('req.session', req.session)
         return res.status(200).json(user);
       }
     }
@@ -304,7 +297,6 @@ async function runApp() {
    * Create a private room and add users to it
    */
   app.post("/room", async (req, res) => {
-    console.log('rom', req.body.user1)
     const { user1, user2 } = {
       user1: parseInt(req.body.user1),
       user2: parseInt(req.body.user2),
@@ -322,7 +314,7 @@ async function runApp() {
     const roomId = "0";
     try {
       let name = await get(`room:${roomId}:name`);
-      const messages = await getMessages(roomId, 0, 15);
+      const messages = await getMessages(roomId, 0, 9);
       return res.status(200).send({ id: roomId, name, messages });
     } catch (err) {
       return res.status(400).send(err);
@@ -331,17 +323,39 @@ async function runApp() {
 
   /** Fetch messages from a selected room */
   app.post("/room/:id/messages", async (req, res) => {
-    console.log('room_maessages_id', req.body)
     const roomId = req.body.id;
     const offset = req.body.offset;
     const size = req.body.size;
     const usertoreset = req.body.usertoreset
     try {
       const messages = await getMessages(roomId, offset, size, usertoreset);
-      let lastmessagefound = messages[0]
-      if (usertoreset !== 0) {
-        await set(`users:${lastmessagefound.roomId}:${usertoreset}:lastmessage`, String(lastmessagefound.date))
+      console.log('messges', messages)
+      console.log('messages', messages.length)
+      if (messages.length > 0) {
+        let lastmessagefound = messages[0]
+        if (usertoreset !== 0) {
+          await set(`users:${lastmessagefound.roomId}:${usertoreset}:lastmessage`, String(lastmessagefound.date))
+        }
+        console.log('messages_if', messages.length)
+        return res.status(200).send(messages);
+      } else {
+        return res.status(200).send('no messages');
       }
+      // return res.status(200).send(messages);
+    } catch (err) {
+      return res.status(400).send('No messages');
+    }
+  });
+
+  /** Fetch more messages from a selected room */
+  app.post("/more/:id/messages", async (req, res) => {
+    console.log('room_maessages_id', req.body)
+    const roomId = req.body.id;
+    console.log('roomId', roomId)
+    const offset = req.body.offset;
+    const size = req.body.size;
+    try {
+      const messages = await getMoreMessages(roomId, offset, size);
       return res.status(200).send(messages);
     } catch (err) {
       return res.status(400).send(err);
@@ -404,7 +418,6 @@ async function runApp() {
   });
 
   app.post("/adduser", async (req, res) => {
-    console.log('adduser', req.body)
     const { username, userid, password, role } = req.body;
     const usernameKey = makeUsernameKey(userid);
     const userExists = await exists(usernameKey);
@@ -442,13 +455,11 @@ async function runApp() {
   });
 
   app.post("/create_channel", async (req, res) => {
-    console.log('rom', req.body)
     const data = req.body
     const [result, hasError] = await createPrivateChannel(data);
     if (hasError) {
       return res.sendStatus(400);
     }
-    console.log('result', result)
     let str = JSON.stringify(result)
     await rpush("rooms", str);
     return res.status(200).send(result);
@@ -456,10 +467,8 @@ async function runApp() {
   });
 
   app.post("/lastmessage", async (req, res) => {
-    console.log('lastmessage', req.body.roomids)
     let result = []
     const {roomids, userid} = req.body
-    console.log('roomids.length', roomids)
     for (let index6 = 0; index6 < roomids.length; index6++) {
       const element = roomids[index6];
       let ls = await get(`users:${element.id}:${userid}:lastmessage`);
@@ -467,7 +476,6 @@ async function runApp() {
         roomid: element.id,
         ls: ls
       }
-      console.log('ls', ls)
       result.push(obj)
     }
     return res.status(200).send(result);
@@ -479,7 +487,6 @@ async function runApp() {
       fileid: fileid,
       type: req.body.type
     }
-    console.log('upload', req.files.file.data)
     res.send(obj)
     saveEncryptedFile(req.files.file.data, filepath + fileid + req.files.file.name, secret.key, secret.iv);
     let i = JSON.stringify(obj)
@@ -487,13 +494,9 @@ async function runApp() {
   })
   
   function saveEncryptedFile(buffer, filePath, key, iv) {
-    console.log("save", buffer, filePath, key, iv)
     const encrypted = encrypt(CryptoAlgorithm, buffer, key, iv);
-  
       filePath = getEncryptedFilePath(filePath);
-      console.log("efilePath", filePath);
       fs1.writeFileSync(filePath, encrypted);
-      console.log("file finished writting");
   }
   
   function encrypt(algorithm, buffer, key, iv) {
@@ -509,10 +512,6 @@ async function runApp() {
   }
   
   function getEncryptedFilePath(filePath) {
-
-    console.log('filePath_getEncryptedFilePath', path.basename(filePath, path.extname(filePath)) +
-    "_encrypted" +
-    path.extname(filePath))
     return path.join(
       path.dirname(filePath),
       path.basename(filePath, path.extname(filePath)) +
@@ -549,11 +548,8 @@ async function runApp() {
 
   app.get("/data/:fileid", async (req, res) => {
     let id = req.params.fileid.split('.').shift()
-    console.log('newname', id)
     let a = await smembers(`attachment:${id}:file`)
-    console.log('attachmentaaa', a)
     let attachment = JSON.parse(a)
-    console.log('attachment', attachment.name)
     const buffer = getEncryptedFile(
       path.join(filepath, attachment.fileid + attachment.name),
       secret.key,
